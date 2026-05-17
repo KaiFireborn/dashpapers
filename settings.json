@@ -1,5 +1,5 @@
 {
-    "source_json": "/path/to/your/.kanri.dat",
+    "source_json": "/home/kf/Sync/.kanri.dat",
     "output_dir": "./output",
     "skip_empty_columns": true,
     "skip_done_column": true,
