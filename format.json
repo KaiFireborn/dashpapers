@@ -1,0 +1,41 @@
+{
+  "boards": [
+    {
+      "columns": [
+        {
+          "cards": [
+            {
+              "color": "bg-blue-600",
+              "description": "<p>DESCRIPTION1</p><p></p>",
+              "name": "CARDNAME1",
+              "tags": [
+                {
+                  "text": "TAG2"
+                }
+              ],
+              "tasks": [
+                {
+                  "finished": false,
+                  "name": "TASK1"
+                },
+                {
+                  "finished": false,
+                  "name": "TASK2"
+                }
+              ]
+            }
+          ],
+          "title": "COLUMN1"
+        }
+      ],
+      "globalTags": [
+        {
+          "text": "TAG1"
+        }
+      ],
+      "lastEdited": "2026-05-17T14:52:54.153Z",
+      "title": "BOARD_NAME1"
+    }
+  ],
+  "defaultRelativeDueDatesEnabled": true
+}

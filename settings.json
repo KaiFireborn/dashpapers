@@ -1,0 +1,12 @@
+{
+    "source_json": "/path/to/your/.kanri.dat",
+    "output_dir": "./output",
+    "skip_empty_columns": true,
+    "skip_done_column": true,
+    "show_tasks": false,
+    "description_rows": 1,
+    "output_size": [
+        0,
+        0
+    ]
+}
