@@ -18,19 +18,16 @@ TASK_LINE_H     = 14
 TASK_GAP        = 2
 TITLE_H         = 34
 
-
 # ── Palette (e-ink: white bg, dark ink) ───────────────────────────────────────
 BG_BOARD        = (255, 255, 255)
 BG_COLUMN       = (238, 238, 238)
 BG_CARD         = (255, 255, 255)
 BG_TAG          = (210, 210, 210)
-
 TEXT_TITLE      = (0,   0,   0  )
 TEXT_COLUMN     = (40,  40,  40 )
 TEXT_CARD       = (30,  30,  30 )
 TEXT_MUTED      = (110, 110, 110)
 TEXT_TAG        = (50,  50,  50 )
-
 BORDER_COLUMN   = (190, 190, 190)
 BORDER_CARD     = (210, 210, 210)
 BORDER_CHECKBOX = (130, 130, 130)
@@ -39,7 +36,7 @@ BORDER_CHECKBOX = (130, 130, 130)
 # ── I/O helpers ───────────────────────────────────────────────────────────────
 
 def load_settings():
-    path = Path("settings.json")
+    path = Path("scripts/kanpng/settings.json")
     if not path.exists():
         print("settings.json not found"); sys.exit(1)
     with open(path) as f:
@@ -60,9 +57,9 @@ def load_fonts():
         B = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
         R = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
         return {
-            "title":  ImageFont.truetype(B, 17),
-            "bold":   ImageFont.truetype(R, 11),   # regular weight for card titles
-            "small":  ImageFont.truetype(R,  9),
+            "title": ImageFont.truetype(B, 17),
+            "bold":  ImageFont.truetype(R, 11),
+            "small": ImageFont.truetype(R,  9),
         }
     except Exception:
         f = ImageFont.load_default()
@@ -75,7 +72,7 @@ def tw(draw, text, font):
     return draw.textlength(text, font=font)
 
 def wrap_text(draw, text, font, max_w):
-    """Word-wrap text to fit max_w pixels; returns list of lines."""
+    """Word-wrap text; returns list of lines."""
     words, lines, cur = text.split(), [], ""
     for word in words:
         cand = (cur + " " + word).strip()
@@ -91,16 +88,15 @@ def strip_html(text):
     return re.sub(r"<[^>]+>", "", text).strip()
 
 def clamp_desc_rows(draw, text, font, max_w, max_rows):
-    """Wrap text and return at most max_rows lines (last line gets '...' if truncated).
-    max_rows=0 means hide the description entirely."""
+    """Wrap and cap to max_rows lines, appending '...' if truncated. 0 = hide."""
     if max_rows == 0 or not text:
         return []
     lines = wrap_text(draw, text, font, max_w)
     if len(lines) <= max_rows:
         return lines
-    truncated = lines[:max_rows]
-    truncated[-1] = truncated[-1].rstrip() + "..."
-    return truncated
+    clipped = lines[:max_rows]
+    clipped[-1] = clipped[-1].rstrip() + "..."
+    return clipped
 
 
 # ── Due-date formatting ───────────────────────────────────────────────────────
@@ -114,48 +110,33 @@ def format_due_date(due_str):
         hours = (due - datetime.now(timezone.utc)).total_seconds() / 3600
         late  = hours < 0
         h     = abs(hours)
-        if h < 1:    label = "<1h ago"         if late else "in <1h"
-        elif h < 24: label = f"{int(h)}h ago"  if late else f"in {int(h)}h"
-        else:        label = f"{int(h/24)}d ago" if late else f"in {int(h/24)}d"
+        if h < 1:    label = "<1h ago"           if late else "in <1h"
+        elif h < 24: label = f"{int(h)}h ago"    if late else f"in {int(h)}h"
+        else:        label = f"{int(h/24)}d ago"  if late else f"in {int(h/24)}d"
         return label, late
     except Exception:
         return due_str[:10], False
 
 
-# ── Measurement pass (dry-run to size the canvas) ────────────────────────────
+# ── Measurement ───────────────────────────────────────────────────────────────
 
 def measure_card_height(draw, card, fonts, cfg):
     inner_w = COLUMN_WIDTH - 2 * COLUMN_PADDING - 2 * CARD_PADDING
     h = CARD_PADDING
-
-    # Card title (may wrap)
     h += len(wrap_text(draw, card.get("name", "Untitled"), fonts["bold"], inner_w)) * 13
-
-    # Optional description (limited to desc_rows lines)
     desc_lines = clamp_desc_rows(draw, strip_html(card.get("description", "")),
                                  fonts["small"], inner_w, cfg["desc_rows"])
     if desc_lines:
         h += 2 + len(desc_lines) * 11
-
-    # Tags row
     if card.get("tags"):
         h += CARD_PADDING + TAG_H
-
-    # Tasks: either expanded list or compact "done/total" count
     tasks = card.get("tasks", [])
     if tasks:
         h += CARD_PADDING
-        if cfg["show_tasks"]:
-            h += len(tasks) * (TASK_LINE_H + TASK_GAP) - TASK_GAP
-        else:
-            h += TASK_LINE_H
-
-    # Due date
+        h += (len(tasks) * (TASK_LINE_H + TASK_GAP) - TASK_GAP) if cfg["show_tasks"] else TASK_LINE_H
     if format_due_date(card.get("dueDate"))[0]:
         h += CARD_PADDING + 13
-
-    h += CARD_PADDING
-    return h
+    return h + CARD_PADDING
 
 def measure_column_height(draw, col, fonts, cfg):
     h = COLUMN_HEADER_H + COLUMN_PADDING
@@ -175,7 +156,7 @@ def draw_checkbox(draw, x, y, checked):
         draw.line([(x+1, y+4), (x+3, y+7), (x+7, y+1)], fill=(30, 30, 30), width=1)
 
 def draw_tag(draw, x, y, text, fonts):
-    """Draw a pill tag; returns the width consumed."""
+    """Draw a pill tag; returns width consumed."""
     w = int(tw(draw, text, fonts["small"])) + TAG_PADDING_X * 2
     draw_rect(draw, x, y, x + w, y + TAG_H, 2, BG_TAG)
     draw.text((x + TAG_PADDING_X, y + 2), text, font=fonts["small"], fill=TEXT_TAG)
@@ -189,25 +170,19 @@ def draw_card(draw, x, y, card, fonts, cfg):
     h  = measure_card_height(draw, card, fonts, cfg)
     x1 = x + COLUMN_WIDTH - 2 * COLUMN_PADDING
     draw_rect(draw, x, y, x1, y + h, 2, BG_CARD, BORDER_CARD)
-
     cx, cy  = x + CARD_PADDING, y + CARD_PADDING
     inner_w = x1 - x - 2 * CARD_PADDING
 
-    # Title
     for line in wrap_text(draw, card.get("name", "Untitled"), fonts["bold"], inner_w):
-        draw.text((cx, cy), line, font=fonts["bold"], fill=TEXT_CARD)
-        cy += 13
+        draw.text((cx, cy), line, font=fonts["bold"], fill=TEXT_CARD); cy += 13
 
-    # Description
     desc_lines = clamp_desc_rows(draw, strip_html(card.get("description", "")),
                                  fonts["small"], inner_w, cfg["desc_rows"])
     if desc_lines:
         cy += 2
         for line in desc_lines:
-            draw.text((cx, cy), line, font=fonts["small"], fill=TEXT_MUTED)
-            cy += 11
+            draw.text((cx, cy), line, font=fonts["small"], fill=TEXT_MUTED); cy += 11
 
-    # Tags
     if card.get("tags"):
         cy += CARD_PADDING
         tx = cx
@@ -215,7 +190,6 @@ def draw_card(draw, x, y, card, fonts, cfg):
             tx += draw_tag(draw, tx, cy, tag.get("text", ""), fonts) + TAG_GAP
         cy += TAG_H
 
-    # Tasks: expanded list or compact count
     tasks = card.get("tasks", [])
     if tasks:
         cy += CARD_PADDING
@@ -230,30 +204,25 @@ def draw_card(draw, x, y, card, fonts, cfg):
             done_count = sum(1 for t in tasks if t.get("finished"))
             draw.text((cx, cy), f"{done_count}/{len(tasks)} tasks",
                       font=fonts["small"], fill=TEXT_MUTED)
-            cy += TASK_LINE_H
 
-    # Due date
     due_label, is_late = format_due_date(card.get("dueDate"))
     if due_label:
         cy += CARD_PADDING
         draw.text((cx, cy), ("LATE: " if is_late else "Due: ") + due_label,
                   font=fonts["small"], fill=TEXT_MUTED)
-
     return h
 
 
 # ── Column renderer ───────────────────────────────────────────────────────────
 
 def draw_column(draw, x, y, col, fonts, cfg):
-    """Draw a column with header and all its cards; returns height used."""
+    """Draw a full column; returns height used."""
     col_h = measure_column_height(draw, col, fonts, cfg)
     draw_rect(draw, x, y, x + COLUMN_WIDTH, y + col_h, 3, BG_COLUMN, BORDER_COLUMN)
     draw.text((x + COLUMN_PADDING, y + 7), col.get("title", ""), font=fonts["bold"], fill=TEXT_COLUMN)
-
     cy = y + COLUMN_HEADER_H + COLUMN_PADDING
     for card in col.get("cards", []):
         cy += draw_card(draw, x + COLUMN_PADDING, cy, card, fonts, cfg) + CARD_GAP
-
     return col_h
 
 
@@ -265,42 +234,143 @@ def filter_columns(columns, cfg):
         if cfg["skip_done"]  and col.get("title", "").strip().lower() == "done": continue
         if cfg["skip_empty"] and not col.get("cards"):                            continue
         result.append(col)
-    return result or columns   # never return empty
+    return result or columns
 
 
-# ── Board renderer ────────────────────────────────────────────────────────────
+# ── Full-board render ─────────────────────────────────────────────────────────
 
-def render_board(board, fonts, cfg):
-    """Render one board to a PIL Image, then crop to output_size if set."""
+def render_full(board, fonts, cfg):
+    """Render the entire board into one image.
+
+    Also returns the pixel boundaries of every column and card so the tiler
+    can find clean cut points that avoid splitting elements.
+
+    Returns:
+        img           -- PIL Image of the complete board
+        col_x_bounds  -- list of (x_left, x_right) per column
+        card_y_bounds -- list of (y_top, y_bottom) for every card in the board
+    """
     columns = filter_columns(board.get("columns", []), cfg)
+    probe   = ImageDraw.Draw(Image.new("RGB", (1, 1)))
 
-    probe       = ImageDraw.Draw(Image.new("RGB", (1, 1)))
     col_heights = [measure_column_height(probe, c, fonts, cfg) for c in columns]
     max_col_h   = max(col_heights, default=100)
+    n           = len(columns)
 
-    n      = len(columns)
     width  = BOARD_PADDING * 2 + n * COLUMN_WIDTH + (n - 1) * COLUMN_GAP
     height = BOARD_PADDING * 2 + TITLE_H + max_col_h
 
     img  = Image.new("RGB", (width, height), BG_BOARD)
     draw = ImageDraw.Draw(img)
-
     draw.text((BOARD_PADDING, BOARD_PADDING), board.get("title", "Board"),
               font=fonts["title"], fill=TEXT_TITLE)
 
+    col_x_bounds  = []
+    card_y_bounds = []
+
     cx = BOARD_PADDING
     for col in columns:
+        col_x_bounds.append((cx, cx + COLUMN_WIDTH))
+        cy = BOARD_PADDING + TITLE_H + COLUMN_HEADER_H + COLUMN_PADDING
+        for card in col.get("cards", []):
+            h = measure_card_height(draw, card, fonts, cfg)
+            card_y_bounds.append((cy, cy + h))
+            cy += h + CARD_GAP
         draw_column(draw, cx, BOARD_PADDING + TITLE_H, col, fonts, cfg)
         cx += COLUMN_WIDTH + COLUMN_GAP
 
-    # Fit to fixed output size if specified; [0, 0] means natural size
-    if cfg["output_size"] and any(cfg["output_size"]):
-        ow, oh = cfg["output_size"]
-        canvas = Image.new("RGB", (ow, oh), BG_BOARD)
-        canvas.paste(img, (0, 0))
-        return canvas
+    return img, col_x_bounds, card_y_bounds
 
-    return img
+
+# ── Tiling helpers ────────────────────────────────────────────────────────────
+
+def find_page_starts(boundaries, page_size, total):
+    """Return pixel offsets at which each page begins along one axis.
+
+    We walk forward page_size pixels at a time and snap each cut backwards to
+    the nearest gap between elements so no element is split.  An element that
+    straddles the cut will be repeated on the next page (handled at crop time).
+    """
+    starts = [0]
+    pos    = 0
+    while pos + page_size < total:
+        ideal = pos + page_size
+        # Walk backwards from the ideal cut to find a point not inside any element
+        cut = ideal
+        for candidate in range(ideal, pos, -1):
+            if not any(s < candidate < e for s, e in boundaries):
+                cut = candidate
+                break
+        starts.append(cut)
+        pos = cut
+    return starts
+
+
+def make_tile(full_img, x0, y0, tile_w, tile_h):
+    """Crop a region from full_img and paste onto a fresh white canvas."""
+    x1 = min(x0 + tile_w, full_img.width)
+    y1 = min(y0 + tile_h, full_img.height)
+    canvas = Image.new("RGB", (tile_w, tile_h), BG_BOARD)
+    canvas.paste(full_img.crop((x0, y0, x1, y1)), (0, 0))
+    return canvas
+
+
+def stamp_label(img, page_num, total_pages, fonts):
+    """Overlay a 'n/total' label in the top-left corner."""
+    if total_pages == 1:
+        return
+    label = f"{page_num}/{total_pages}"
+    draw  = ImageDraw.Draw(img)
+    lw    = int(draw.textlength(label, font=fonts["small"]))
+    pad   = 4
+    draw.rectangle([pad, pad, pad + lw + 6, pad + 15], fill=BG_BOARD, outline=(180, 180, 180))
+    draw.text((pad + 3, pad + 2), label, font=fonts["small"], fill=TEXT_TITLE)
+
+
+# ── Save: full + tiles ────────────────────────────────────────────────────────
+
+def save_board(board, fonts, cfg, out_dir, board_index):
+    stem = safe_filename(board.get("title", f"board_{board_index}"))
+    full_img, col_x_bounds, card_y_bounds = render_full(board, fonts, cfg)
+
+    out_w, out_h = cfg["output_size"] if cfg["output_size"] else (0, 0)
+    fw, fh       = full_img.size
+    needs_tiles  = (out_w and out_w < fw) or (out_h and out_h < fh)
+
+    # Always write the full image (named _full when tiles will also be written,
+    # or plain when size is natural / board fits in one page)
+    full_suffix = "_full" if needs_tiles else ""
+    full_path   = out_dir / f"{stem}{full_suffix}.png"
+    full_img.save(full_path)
+    print(f"Saved: {full_path}  ({fw}x{fh})")
+
+    if not needs_tiles:
+        return
+
+    # Compute page-start offsets for each axis
+    tile_w   = out_w if out_w else fw
+    tile_h   = out_h if out_h else fh
+    x_starts = find_page_starts(col_x_bounds,  tile_w, fw) if tile_w < fw else [0]
+    y_starts = find_page_starts(card_y_bounds, tile_h, fh) if tile_h < fh else [0]
+
+    nx, ny       = len(x_starts), len(y_starts)
+    total_tiles  = nx * ny
+    tile_num     = 0
+
+    for yi, y0 in enumerate(y_starts):
+        for xi, x0 in enumerate(x_starts):
+            tile_num += 1
+            tile = make_tile(full_img, x0, y0, tile_w, tile_h)
+            stamp_label(tile, tile_num, total_tiles, fonts)
+
+            # Suffix: single counter for 1-D split, row_col for 2-D
+            if   nx == 1: suffix = f"_{yi + 1}"
+            elif ny == 1: suffix = f"_{xi + 1}"
+            else:         suffix = f"_{yi + 1}_{xi + 1}"
+
+            path = out_dir / f"{stem}{suffix}.png"
+            tile.save(path)
+            print(f"Saved: {path}  ({tile.width}x{tile.height})  [{tile_num}/{total_tiles}]")
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
@@ -312,13 +382,15 @@ def main():
     out_dir = Path(s.get("output_dir", "."))
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    size_val = s.get("output_size")   # e.g. [800, 480] or null
+    size_val    = s.get("output_size")          # [800, 480], [0, 0], or null/absent
+    output_size = tuple(size_val) if (size_val and any(size_val)) else None
+
     cfg = {
         "skip_empty":  s.get("skip_empty_columns", True),
         "skip_done":   s.get("skip_done_column",   True),
         "show_tasks":  s.get("show_tasks",         True),
         "desc_rows":   s.get("description_rows",   0),
-        "output_size": tuple(size_val) if size_val else None,
+        "output_size": output_size,
     }
 
     boards = data.get("boards", [])
@@ -326,10 +398,7 @@ def main():
         print("No boards found."); sys.exit(1)
 
     for i, board in enumerate(boards):
-        img  = render_board(board, fonts, cfg)
-        path = out_dir / (safe_filename(board.get("title", f"board_{i}")) + ".png")
-        img.save(path)
-        print(f"Saved: {path}  ({img.size[0]}x{img.size[1]})")
+        save_board(board, fonts, cfg, out_dir, i)
 
 if __name__ == "__main__":
     main()
