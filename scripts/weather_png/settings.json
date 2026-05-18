@@ -1,0 +1,8 @@
+{
+    "location": "SW1A 1AA",
+    "output_size": [
+        800,
+        480
+    ],
+    "output_dir": "scripts/weather_png/output"
+}
