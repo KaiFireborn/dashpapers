@@ -36,7 +36,7 @@ BORDER_CHECKBOX = (130, 130, 130)
 # ── I/O helpers ───────────────────────────────────────────────────────────────
 
 def load_settings():
-    path = Path("scripts/kanpng/settings.json")
+    path = Path("settings.json")
     if not path.exists():
         print("settings.json not found"); sys.exit(1)
     with open(path) as f:
@@ -130,12 +130,14 @@ def measure_card_height(draw, card, fonts, cfg):
         h += 2 + len(desc_lines) * 11
     if card.get("tags"):
         h += CARD_PADDING + TAG_H
-    tasks = card.get("tasks", [])
-    if tasks:
-        h += CARD_PADDING
-        h += (len(tasks) * (TASK_LINE_H + TASK_GAP) - TASK_GAP) if cfg["show_tasks"] else TASK_LINE_H
-    if format_due_date(card.get("dueDate"))[0]:
-        h += CARD_PADDING + 13
+    tasks     = card.get("tasks", [])
+    due_label = format_due_date(card.get("dueDate"))[0]
+    # Expanded task list sits above the footer row
+    if tasks and cfg["show_tasks"]:
+        h += CARD_PADDING + len(tasks) * (TASK_LINE_H + TASK_GAP) - TASK_GAP
+    # Footer row: task count (left) and/or due date (right) — always one line
+    if (tasks and not cfg["show_tasks"]) or due_label:
+        h += CARD_PADDING + TASK_LINE_H
     return h + CARD_PADDING
 
 def measure_column_height(draw, col, fonts, cfg):
@@ -191,25 +193,32 @@ def draw_card(draw, x, y, card, fonts, cfg):
         cy += TAG_H
 
     tasks = card.get("tasks", [])
-    if tasks:
+    due_label, is_late = format_due_date(card.get("dueDate"))
+
+    # Expanded task list (only when show_tasks is on)
+    if tasks and cfg["show_tasks"]:
         cy += CARD_PADDING
-        if cfg["show_tasks"]:
-            for task in tasks:
-                done = task.get("finished", False)
-                draw_checkbox(draw, cx, cy + 1, done)
-                draw.text((cx + 13, cy), task.get("name", ""), font=fonts["small"],
-                          fill=TEXT_MUTED if done else TEXT_CARD)
-                cy += TASK_LINE_H + TASK_GAP
-        else:
+        for task in tasks:
+            done = task.get("finished", False)
+            draw_checkbox(draw, cx, cy + 1, done)
+            draw.text((cx + 13, cy), task.get("name", ""), font=fonts["small"],
+                      fill=TEXT_MUTED if done else TEXT_CARD)
+            cy += TASK_LINE_H + TASK_GAP
+
+    # Footer row: compact task count on the left, due date on the right
+    show_count = tasks and not cfg["show_tasks"]
+    if show_count or due_label:
+        cy += CARD_PADDING
+        if show_count:
             done_count = sum(1 for t in tasks if t.get("finished"))
             draw.text((cx, cy), f"{done_count}/{len(tasks)} tasks",
                       font=fonts["small"], fill=TEXT_MUTED)
+        if due_label:
+            label = ("LATE: " if is_late else "Due: ") + due_label
+            lw    = int(tw(draw, label, fonts["small"]))
+            draw.text((x1 - CARD_PADDING - lw, cy), label,
+                      font=fonts["small"], fill=TEXT_MUTED)
 
-    due_label, is_late = format_due_date(card.get("dueDate"))
-    if due_label:
-        cy += CARD_PADDING
-        draw.text((cx, cy), ("LATE: " if is_late else "Due: ") + due_label,
-                  font=fonts["small"], fill=TEXT_MUTED)
     return h
 
 
@@ -327,6 +336,18 @@ def stamp_label(img, page_num, total_pages, fonts):
     draw.text((pad + 3, pad + 2), label, font=fonts["small"], fill=TEXT_TITLE)
 
 
+def tile_has_content(tile):
+    """Return True if the tile contains any pixel that isn't the background colour."""
+    bg = BG_BOARD
+    px = tile.load()
+    w, h = tile.size
+    for y in range(h):
+        for x in range(w):
+            if px[x, y] != bg:
+                return True
+    return False
+
+
 # ── Save: full + tiles ────────────────────────────────────────────────────────
 
 def save_board(board, fonts, cfg, out_dir, board_index):
@@ -367,6 +388,10 @@ def save_board(board, fonts, cfg, out_dir, board_index):
             if   nx == 1: suffix = f"_{yi + 1}"
             elif ny == 1: suffix = f"_{xi + 1}"
             else:         suffix = f"_{yi + 1}_{xi + 1}"
+
+            if not tile_has_content(tile):
+                print(f"Skipped (blank): {stem}{suffix}.png")
+                continue
 
             path = out_dir / f"{stem}{suffix}.png"
             tile.save(path)
